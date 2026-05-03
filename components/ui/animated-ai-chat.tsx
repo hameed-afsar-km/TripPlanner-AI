@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import * as React from "react"
+import { useTripStore } from "@/store/useTripStore";
+import { createConversation, addMessageToDb, fetchMessagesForConversation, updateConversationTimestamp, uploadFile, type Attachment } from "@/lib/db";
 
 interface UseAutoResizeTextareaProps {
     minHeight: number;
@@ -131,8 +133,10 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
 Textarea.displayName = "Textarea"
 
 export function AnimatedAIChat() {
+    const { user, chatHistory, addMessage, activeConversationId, setActiveConversationId } = useTripStore();
     const [value, setValue] = useState("");
-    const [attachments, setAttachments] = useState<string[]>([]);
+    const [attachments, setAttachments] = useState<Attachment[]>([]);
+    const [isUploading, setIsUploading] = useState(false);
     const [isTyping, setIsTyping] = useState(false);
     const [isPending, startTransition] = useTransition();
     const [activeSuggestion, setActiveSuggestion] = useState<number>(-1);
@@ -145,6 +149,25 @@ export function AnimatedAIChat() {
     });
     const [inputFocused, setInputFocused] = useState(false);
     const commandPaletteRef = useRef<HTMLDivElement>(null);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [chatHistory]);
+
+    useEffect(() => {
+        if (activeConversationId) {
+            fetchMessagesForConversation(activeConversationId).then(msgs => {
+                // Clear current and load from DB
+                useTripStore.setState({ chatHistory: msgs as any });
+            });
+        }
+    }, [activeConversationId]);
 
     const commandSuggestions: CommandSuggestion[] = [
         { 
@@ -254,22 +277,87 @@ export function AnimatedAIChat() {
         }
     };
 
-    const handleSendMessage = () => {
-        if (value.trim()) {
-            startTransition(() => {
-                setIsTyping(true);
-                setTimeout(() => {
-                    setIsTyping(false);
-                    setValue("");
-                    adjustHeight(true);
-                }, 3000);
+    const handleSendMessage = async () => {
+        if (!value.trim()) return;
+
+        const userMessage = {
+            id: Date.now().toString(),
+            role: 'user' as const,
+            content: value.trim()
+        };
+
+        addMessage(userMessage);
+        const currentInput = value.trim();
+        setValue("");
+        adjustHeight(true);
+        setIsTyping(true);
+
+        try {
+            let convId = activeConversationId;
+            // If it's the first message and no conversation active, create one
+            if (!convId && user?.uid) {
+                const title = currentInput.slice(0, 30) + (currentInput.length > 30 ? "..." : "");
+                const newId = await createConversation(user.uid, title);
+                if (newId) {
+                    convId = newId;
+                    setActiveConversationId(newId);
+                }
+            }
+
+            // Save user message to DB
+            if (convId) {
+                await addMessageToDb(convId, userMessage);
+            }
+
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messages: [...chatHistory, userMessage],
+                    attachments: attachments
+                })
             });
+
+            const data = await response.json();
+            
+            if (data.text) {
+                const assistantMsg = {
+                    id: (Date.now() + 1).toString(),
+                    role: 'assistant' as const,
+                    content: data.text
+                };
+                addMessage(assistantMsg);
+                setAttachments([]); // Clear attachments after sending
+                
+                // Save assistant message to DB
+                if (convId) {
+                    await addMessageToDb(convId, assistantMsg);
+                    await updateConversationTimestamp(convId);
+                }
+            }
+        } catch (error) {
+            console.error("Chat Error:", error);
+        } finally {
+            setIsTyping(false);
         }
     };
 
     const handleAttachFile = () => {
-        const mockFileName = `ticket-${Math.floor(Math.random() * 1000)}.pdf`;
-        setAttachments(prev => [...prev, mockFileName]);
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file && user?.uid) {
+            setIsUploading(true);
+            const attachment = await uploadFile(user.uid, file);
+            if (attachment) {
+                setAttachments(prev => [...prev, attachment]);
+            }
+            setIsUploading(false);
+        }
+        // Reset input
+        if (fileInputRef.current) fileInputRef.current.value = "";
     };
 
     const removeAttachment = (index: number) => {
@@ -299,35 +387,57 @@ export function AnimatedAIChat() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, ease: "easeOut" }}
                 >
-                    <div className="text-center space-y-3">
-                        <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.2, duration: 0.5 }}
-                            className="inline-block"
-                        >
-                            <h1 className="text-3xl font-medium tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500 pb-1">
-                                Where do you want to go today?
-                            </h1>
-                            <motion.div 
-                                className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"
-                                initial={{ width: 0, opacity: 0 }}
-                                animate={{ width: "100%", opacity: 1 }}
-                                transition={{ delay: 0.5, duration: 0.8 }}
-                            />
-                        </motion.div>
-                        <motion.p 
-                            className="text-sm text-white/40"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            transition={{ delay: 0.3 }}
-                        >
-                            Type a command or ask a question to start planning
-                        </motion.p>
+                    <div className="text-center space-y-3 pt-12">
+                        {chatHistory.length === 0 && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.2, duration: 0.5 }}
+                                className="inline-block"
+                            >
+                                <h1 className="text-3xl font-medium tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500 pb-1">
+                                    Where do you want to go today?
+                                </h1>
+                                <motion.div 
+                                    className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                                    initial={{ width: 0, opacity: 0 }}
+                                    animate={{ width: "100%", opacity: 1 }}
+                                    transition={{ delay: 0.5, duration: 0.8 }}
+                                />
+                                <p className="text-sm text-white/40 mt-3">
+                                    Type a command or ask a question to start planning
+                                </p>
+                            </motion.div>
+                        )}
+                    </div>
+
+                    {/* Chat Messages */}
+                    <div className="flex-1 overflow-y-auto min-h-[300px] max-h-[60vh] space-y-6 px-2 no-scrollbar scroll-smooth">
+                        {chatHistory.map((msg) => (
+                            <motion.div
+                                key={msg.id}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className={cn(
+                                    "flex w-full",
+                                    msg.role === 'user' ? "justify-end" : "justify-start"
+                                )}
+                            >
+                                <div className={cn(
+                                    "max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed",
+                                    msg.role === 'user' 
+                                        ? "bg-white text-[#0A0A0B] font-medium shadow-lg shadow-white/5" 
+                                        : "bg-white/[0.03] border border-white/[0.05] text-white/90"
+                                )}>
+                                    {msg.content}
+                                </div>
+                            </motion.div>
+                        ))}
+                        <div ref={messagesEndRef} />
                     </div>
 
                     <motion.div 
-                        className="relative backdrop-blur-2xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl"
+                        className="relative backdrop-blur-2xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl mt-auto mb-8"
                         initial={{ scale: 0.98 }}
                         animate={{ scale: 1 }}
                         transition={{ delay: 0.1 }}
@@ -417,7 +527,7 @@ export function AnimatedAIChat() {
                                             animate={{ opacity: 1, scale: 1 }}
                                             exit={{ opacity: 0, scale: 0.9 }}
                                         >
-                                            <span>{file}</span>
+                                            <span className="truncate max-w-[150px]">{file.name}</span>
                                             <button 
                                                 onClick={() => removeAttachment(index)}
                                                 className="text-white/40 hover:text-white transition-colors"
@@ -426,12 +536,24 @@ export function AnimatedAIChat() {
                                             </button>
                                         </motion.div>
                                     ))}
+                                    {isUploading && (
+                                        <div className="flex items-center gap-2 text-xs text-white/40 px-3 py-1.5">
+                                            <LoaderIcon className="w-3 h-3 animate-spin" />
+                                            <span>Uploading...</span>
+                                        </div>
+                                    )}
                                 </motion.div>
                             )}
                         </AnimatePresence>
 
                         <div className="p-4 border-t border-white/[0.05] flex items-center justify-between gap-4">
                             <div className="flex items-center gap-3">
+                                <input 
+                                    type="file" 
+                                    className="hidden" 
+                                    ref={fileInputRef} 
+                                    onChange={handleFileChange}
+                                />
                                 <motion.button
                                     type="button"
                                     onClick={handleAttachFile}

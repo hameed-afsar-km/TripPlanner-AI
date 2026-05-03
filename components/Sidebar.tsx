@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useTripStore } from '../store/useTripStore';
-import { MessageSquare, Plus, Compass, LogOut, User as UserIcon, Trash2 } from 'lucide-react';
+import { MessageSquare, Plus, Compass, LogOut, User as UserIcon, Trash2, Edit2, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { fetchConversations, deleteConversation } from '../lib/db';
+import { subscribeToConversations, deleteConversation, renameConversation } from '../lib/db';
 
 import { signOut, auth } from '../lib/firebase';
 
 export default function Sidebar() {
   const { user, conversations, setConversations, activeConversationId, setActiveConversationId, resetState, setUser, removeConversation } = useTripStore();
   const [chatToDelete, setChatToDelete] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
 
   const handleLogout = async () => {
     try {
@@ -21,8 +23,8 @@ export default function Sidebar() {
 
   useEffect(() => {
     if (user?.uid) {
-      // In a real app, this might be triggered when we want to refresh
-      fetchConversations(user.uid).then(setConversations);
+      const unsubscribe = subscribeToConversations(user.uid, setConversations);
+      return () => unsubscribe();
     }
   }, [user, setConversations]);
 
@@ -32,6 +34,23 @@ export default function Sidebar() {
       removeConversation(chatToDelete);
       setChatToDelete(null);
     }
+  };
+
+  const startEditing = (chat: any) => {
+    setEditingId(chat.id);
+    setEditTitle(chat.title);
+  };
+
+  const saveRename = async (id: string) => {
+    if (editTitle.trim()) {
+      await renameConversation(id, editTitle.trim());
+    }
+    setEditingId(null);
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent, id: string) => {
+    if (e.key === 'Enter') saveRename(id);
+    if (e.key === 'Escape') setEditingId(null);
   };
 
   return (
@@ -64,19 +83,47 @@ export default function Sidebar() {
               conversations.map(chat => (
                 <div 
                   key={chat.id}
-                  onClick={() => setActiveConversationId(chat.id)}
+                  onClick={() => !editingId && setActiveConversationId(chat.id)}
                   className={`flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer group transition-colors ${activeConversationId === chat.id ? 'bg-white/10 text-white' : 'bg-transparent text-white/60 hover:bg-white/5 hover:text-white/80'}`}
                 >
-                  <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="flex items-center gap-3 overflow-hidden flex-1">
                     <MessageSquare className="w-4 h-4 shrink-0" />
-                    <span className="text-sm truncate">{chat.title}</span>
+                    {editingId === chat.id ? (
+                      <input
+                        autoFocus
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        onBlur={() => saveRename(chat.id)}
+                        onKeyDown={(e) => handleKeyPress(e, chat.id)}
+                        className="bg-white/10 border-none outline-none text-sm text-white px-1 py-0.5 rounded w-full"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span className="text-sm truncate">{chat.title}</span>
+                    )}
                   </div>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); setChatToDelete(chat.id); }}
-                    className="opacity-0 group-hover:opacity-100 text-white/40 hover:text-red-400 transition-all p-1"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    {editingId === chat.id ? (
+                      <button onClick={(e) => { e.stopPropagation(); saveRename(chat.id); }} className="text-green-400 hover:text-green-300 p-1">
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); startEditing(chat); }}
+                          className="text-white/40 hover:text-white transition-all p-1"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setChatToDelete(chat.id); }}
+                          className="text-white/40 hover:text-red-400 transition-all p-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))
             ) : (
