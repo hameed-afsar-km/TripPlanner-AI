@@ -8,7 +8,10 @@ export async function POST(req: Request) {
     const { messages, attachments } = await req.json();
     
     // Use gemini-2.5-flash as the requested "flash" model
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-2.5-flash",
+      systemInstruction: "You are a professional travel assistant. Help the user plan their trips, find destinations, and refine their itineraries. Be concise but enthusiastic and helpful. Use markdown for formatting. You can also analyze files provided by the user via URLs."
+    });
 
     // Format messages for Gemini history
     const history = messages.slice(0, -1).map((m: any) => ({
@@ -20,9 +23,6 @@ export async function POST(req: Request) {
 
     const chat = model.startChat({
       history: history,
-      systemInstruction: {
-        parts: [{ text: "You are a professional travel assistant. Help the user plan their trips, find destinations, and refine their itineraries. Be concise but enthusiastic and helpful. Use markdown for formatting. You can also analyze files provided by the user via URLs." }],
-      },
     });
 
     // Handle multimodal parts (text + attachments)
