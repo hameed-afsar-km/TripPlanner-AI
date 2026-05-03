@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useId, useEffect, CSSProperties } from 'react';
+import React, { useRef, useId, useEffect, CSSProperties, memo } from 'react';
 import { animate, useMotionValue, AnimationPlaybackControls } from 'framer-motion';
 
 // Type definitions
@@ -55,14 +55,14 @@ const useInstanceId = (): string => {
     return instanceId;
 };
 
-export function EtheralShadow({
+export const EtheralShadow = memo(function EtheralShadow({
     sizing = 'fill',
-    color = 'rgba(139, 92, 246, 0.3)', // Defaulted to TripPlanner theme purple
+    color = 'rgba(139, 92, 246, 0.3)',
     animation,
     noise,
     style,
     className,
-    showTitle = false // Default to false for background use
+    showTitle = false
 }: ShadowOverlayProps) {
     const id = useInstanceId();
     const animationEnabled = animation && animation.scale > 0;
@@ -116,7 +116,8 @@ export function EtheralShadow({
                 style={{
                     position: "absolute",
                     inset: -displacementScale,
-                    filter: animationEnabled ? `url(#${id}) blur(4px)` : "none"
+                    filter: animationEnabled ? `url(#${id}) blur(4px)` : "none",
+                    willChange: animationEnabled ? "filter" : "auto"
                 }}
             >
                 {animationEnabled && (
@@ -125,7 +126,7 @@ export function EtheralShadow({
                             <filter id={id}>
                                 <feTurbulence
                                     result="undulation"
-                                    numOctaves="2"
+                                    numOctaves="1"
                                     baseFrequency={`${mapRange(animation.scale, 0, 100, 0.001, 0.0005)},${mapRange(animation.scale, 0, 100, 0.004, 0.002)}`}
                                     seed="0"
                                     type="turbulence"
@@ -202,4 +203,4 @@ export function EtheralShadow({
             )}
         </div>
     );
-}
+});

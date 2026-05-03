@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useTransition } from "react";
+import { useEffect, useRef, useCallback, useTransition, useMemo, memo } from "react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -134,6 +134,33 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
 )
 Textarea.displayName = "Textarea"
 
+const COMMAND_SUGGESTIONS: CommandSuggestion[] = [
+    { 
+        icon: <Map className="w-4 h-4" />, 
+        label: "Create Plan", 
+        description: "Generate a new multi-day trip", 
+        prefix: "/plan" 
+    },
+    { 
+        icon: <Compass className="w-4 h-4" />, 
+        label: "Explore", 
+        description: "Find hidden gems in any city", 
+        prefix: "/explore" 
+    },
+    { 
+        icon: <Plane className="w-4 h-4" />, 
+        label: "Bookings", 
+        description: "Check flight & hotel availability", 
+        prefix: "/book" 
+    },
+    { 
+        icon: <Sparkles className="w-4 h-4" />, 
+        label: "Optimize", 
+        description: "Refine your current budget", 
+        prefix: "/optimize" 
+    },
+];
+
 export function AnimatedAIChat() {
     const [value, setValue] = useState("");
     const [attachments, setAttachments] = useState<string[]>([]);
@@ -150,32 +177,7 @@ export function AnimatedAIChat() {
     const [inputFocused, setInputFocused] = useState(false);
     const commandPaletteRef = useRef<HTMLDivElement>(null);
 
-    const commandSuggestions: CommandSuggestion[] = [
-        { 
-            icon: <Map className="w-4 h-4" />, 
-            label: "Create Plan", 
-            description: "Generate a new multi-day trip", 
-            prefix: "/plan" 
-        },
-        { 
-            icon: <Compass className="w-4 h-4" />, 
-            label: "Explore", 
-            description: "Find hidden gems in any city", 
-            prefix: "/explore" 
-        },
-        { 
-            icon: <Plane className="w-4 h-4" />, 
-            label: "Bookings", 
-            description: "Check flight & hotel availability", 
-            prefix: "/book" 
-        },
-        { 
-            icon: <Sparkles className="w-4 h-4" />, 
-            label: "Optimize", 
-            description: "Refine your current budget", 
-            prefix: "/optimize" 
-        },
-    ];
+    const commandSuggestions = COMMAND_SUGGESTIONS;
 
     useEffect(() => {
         if (value.startsWith('/') && !value.includes(' ')) {
@@ -558,7 +560,7 @@ export function AnimatedAIChat() {
     );
 }
 
-function TypingDots() {
+const TypingDots = memo(function TypingDots() {
     return (
         <div className="flex items-center ml-1">
             {[1, 2, 3].map((dot) => (
@@ -583,7 +585,7 @@ function TypingDots() {
             ))}
         </div>
     );
-}
+});
 
 interface ActionButtonProps {
     icon: React.ReactNode;

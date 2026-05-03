@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Sidebar } from "@/components/Sidebar";
+import { EtheralShadow } from "@/components/ui/etheral-shadow";
 
 export default function AppLayout({ children }) {
   const { user, loading } = useAuth();
@@ -26,13 +27,19 @@ export default function AppLayout({ children }) {
   }
 
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Background decorations */}
-      <div className="fixed top-0 right-0 w-[500px] h-[500px] bg-purple-600/10 rounded-full blur-[150px] pointer-events-none" />
-      <div className="fixed bottom-0 left-[250px] w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[150px] pointer-events-none" />
+    <div className="min-h-screen bg-[#0a0f1d] flex relative overflow-hidden">
+      {/* Global Background Layer */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-50">
+        <EtheralShadow 
+          color="rgba(139, 92, 246, 0.4)" 
+          animation={{ scale: 80, speed: 50 }}
+          noise={{ opacity: 0.5, scale: 1.2 }}
+          sizing="fill"
+        />
+      </div>
 
       <Sidebar />
-      <main className="flex-1 ml-64 p-8 relative z-10">
+      <main className="flex-1 ml-64 p-8 relative z-10 overflow-y-auto h-screen custom-scrollbar">
         {children}
       </main>
     </div>
